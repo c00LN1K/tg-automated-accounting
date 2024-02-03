@@ -1,4 +1,6 @@
 import datetime
+import json
+
 import openpyxl
 import os
 
@@ -17,6 +19,20 @@ last_index = 0
 def check_root():
     if os.getcwd() != ROOT:
         os.chdir(ROOT)
+
+
+def save_active_tasks():
+    check_root()
+    with open('task.json', 'w') as file:
+        json.dump(active_tasks, file)
+
+
+def get_active_tasks():
+    check_root()
+    if 'task.json' in os.listdir():
+        with open('task.json', 'r') as file:
+            new_dict = json.load(file)
+            active_tasks.update(new_dict)
 
 
 def get_filename(date, is_create=True):
@@ -56,7 +72,7 @@ def get_filename(date, is_create=True):
         ws.title = sheet
         workbook.save(excel_week)
         df = pd.DataFrame({'Дата': [], 'Имя': [], 'Время': [], 'Стоимость': [], 'Оплачено': []})
-        with pd.ExcelWriter(os.getcwd() + '\\' + excel_week, mode='a', engine='openpyxl',
+        with pd.ExcelWriter(excel_week, mode='a', engine='openpyxl',
                             if_sheet_exists='replace') as writer:
             df.to_excel(writer, sheet_name=sheet, index=False)
 
@@ -66,11 +82,11 @@ def get_filename(date, is_create=True):
             return
         wb.save(excel_week)
         df = pd.DataFrame({'Дата': [], 'Имя': [], 'Время': [], 'Стоимость': [], 'Оплачено': []})
-        with pd.ExcelWriter(os.getcwd() + '\\' + excel_week, mode='a', engine='openpyxl',
+        with pd.ExcelWriter(excel_week, mode='a', engine='openpyxl',
                             if_sheet_exists='replace') as writer:
             df.to_excel(writer, sheet_name=sheet, index=False)
 
-    return os.getcwd() + '\\' + excel_week
+    return os.path.join(os.getcwd(), excel_week)
 
 
 def write_task(task: list):
@@ -108,7 +124,15 @@ def write_task(task: list):
     wb.save(file_name)
 
     global last_index
-    active_tasks[last_index] = task
+    while True:
+        if active_tasks.get(str(last_index)):
+            last_index += 1
+        else:
+            active_tasks[str(last_index)] = task
+            break
+    new_dict = dict(sorted(active_tasks.items(), key=lambda x: x[1][0]))
+    active_tasks.clear()
+    active_tasks.update(new_dict)
     last_index += 1
     print('Обновление индекса:', last_index)
     return True
