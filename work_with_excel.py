@@ -10,10 +10,12 @@ from openpyxl.styles import Font
 
 MONTH = ['', 'январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь',
          'декабрь']
+WEEKDAY = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье']
 
 ROOT = os.getcwd()
 active_tasks = {}
 last_index = 0
+default_data = {'Дата': [], 'Имя': [], 'Время': [], 'Длительность': [], 'Стоимость': [], 'Оплачено': []}
 
 
 def check_root():
@@ -71,7 +73,7 @@ def get_filename(date, is_create=True):
         ws = workbook.active
         ws.title = sheet
         workbook.save(excel_week)
-        df = pd.DataFrame({'Дата': [], 'Имя': [], 'Время': [], 'Стоимость': [], 'Оплачено': []})
+        df = pd.DataFrame(default_data)
         with pd.ExcelWriter(excel_week, mode='a', engine='openpyxl',
                             if_sheet_exists='replace') as writer:
             df.to_excel(writer, sheet_name=sheet, index=False)
@@ -81,7 +83,7 @@ def get_filename(date, is_create=True):
         if not is_create:
             return
         wb.save(excel_week)
-        df = pd.DataFrame({'Дата': [], 'Имя': [], 'Время': [], 'Стоимость': [], 'Оплачено': []})
+        df = pd.DataFrame(default_data)
         with pd.ExcelWriter(excel_week, mode='a', engine='openpyxl',
                             if_sheet_exists='replace') as writer:
             df.to_excel(writer, sheet_name=sheet, index=False)
@@ -99,7 +101,7 @@ def write_task(task: list):
     sheet = date[-2:]
 
     # Чтение данных из листа
-    df = pd.read_excel(file_name, sheet_name=sheet, usecols="A:E")
+    df = pd.read_excel(file_name, sheet_name=sheet, usecols=f"A:{chr(len(default_data) - 1 + ord('A'))}")
     summ = np.sum(df[df['Оплачено'] == True]['Стоимость'])
     # Проверка наличия задачи в DataFrame
     mask = (df == task).all(axis=1)
@@ -118,9 +120,9 @@ def write_task(task: list):
 
     wb = openpyxl.load_workbook(filename=file_name)
     ws = wb.get_sheet_by_name(sheet)
-    ws['H1'] = 'Сумма'
-    ws['H1'].font = Font(bold=True)
-    ws['H2'] = summ
+    ws['I1'] = 'Сумма'
+    ws['I1'].font = Font(bold=True)
+    ws['I2'] = summ
     wb.save(file_name)
 
     global last_index
@@ -130,7 +132,7 @@ def write_task(task: list):
         else:
             active_tasks[str(last_index)] = task
             break
-    new_dict = dict(sorted(active_tasks.items(), key=lambda x: x[1][0]))
+    new_dict = dict(sorted(active_tasks.items(), key=lambda x: (x[1][0], x[1][2])))
     active_tasks.clear()
     active_tasks.update(new_dict)
     last_index += 1
@@ -149,7 +151,7 @@ def change_status(status, task: list):
     summ = 0
     with pd.ExcelWriter(file_name, engine="openpyxl", mode="a",
                         if_sheet_exists="replace") as writer:
-        df = pd.read_excel(file_name, sheet_name=sheet, usecols="A:E")
+        df = pd.read_excel(file_name, sheet_name=sheet, usecols=f"A:{chr(len(default_data) - 1 + ord('A'))}")
         mask = (df == task).all(axis=1)
         if mask.any():
             location = df.index[mask].tolist()
@@ -167,7 +169,7 @@ def change_status(status, task: list):
     if summ:
         wb = openpyxl.load_workbook(filename=file_name)
         ws = wb.get_sheet_by_name(sheet)
-        ws['H1'] = 'Сумма'
-        ws['H1'].font = Font(bold=True)
-        ws['H2'] = summ
+        ws['I1'] = 'Сумма'
+        ws['I1'].font = Font(bold=True)
+        ws['I2'] = summ
         wb.save(file_name)

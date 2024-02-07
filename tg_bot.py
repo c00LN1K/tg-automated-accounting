@@ -20,7 +20,6 @@ number_starts = 0
 def restricted(func):
     def wrapped(message):
         user_id = message.from_user.id
-        print(user_id)
         if str(user_id) in config.ALLOWED_USERS:
             func(message)
         else:
@@ -110,6 +109,23 @@ def get_time(message, task: list):
         menu_handler(message)
     elif re.fullmatch(r'[0-2][0-9]:[0-9][0-9]', message.text):
         task.append(message.text)
+        keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+        button30 = types.KeyboardButton(text='30')
+        button60 = types.KeyboardButton(text='60')
+        menu_button = types.KeyboardButton(text='Главное меню')
+        keyboard.add(button30, button60, menu_button)
+        bot.send_message(message.chat.id, 'Выберете или введите длительность стирки в минутах', reply_markup=keyboard)
+        bot.register_next_step_handler(message, get_duration, task)
+    else:
+        bot.send_message(message.chat.id, 'Похоже возникла ошибка. Проверьте корректность вводимых данных')
+        bot.register_next_step_handler(message, get_time, task)
+
+
+def get_duration(message, task: list):
+    if message.text == 'Главное меню':
+        menu_handler(message)
+    elif message.text.isdigit():
+        task.append(int(message.text))
         keyboard = types.ReplyKeyboardMarkup(row_width=3, resize_keyboard=True)
         button50 = types.KeyboardButton(text='50')
         button85 = types.KeyboardButton(text='85')
@@ -118,12 +134,9 @@ def get_time(message, task: list):
         keyboard.add(button50, button85, button100, menu_button)
         bot.send_message(message.chat.id, 'Выберете или введите свою стоимость стирки', reply_markup=keyboard)
         bot.register_next_step_handler(message, get_price, task)
-
-        # bot.send_message(message.chat.id, 'Введите длительность стирки в минутах')
-        # bot.register_next_step_handler(message, get_duration, task)
     else:
         bot.send_message(message.chat.id, 'Похоже возникла ошибка. Проверьте корректность вводимых данных')
-        bot.register_next_step_handler(message, get_time, task)
+        bot.register_next_step_handler(message, get_duration, task)
 
 
 def get_price(message, task: list):
@@ -165,7 +178,12 @@ def check_active(message):
         delete_button = types.InlineKeyboardButton(text='Удалить', callback_data=f'del_{index_task}')
         finish_button = types.InlineKeyboardButton(text='Завершить', callback_data=f'fin_{index_task}')
         keyboard.add(finish_button, delete_button)
-        data_out = f'Дата: {data[0]}\nИмя: {data[1]}\nВремя: {data[2]}\nСтоимость: {data[3]}'
+        data_out = (
+            f"Дата: {datetime.datetime.fromisoformat(data[0]).strftime('%d.%m')} ({WEEKDAY[datetime.datetime.fromisoformat(data[0]).weekday()]})\n"
+            f"Имя: {data[1]}\n"
+            f"Длительность: {data[3]} мин.\n"
+            f"Время: {data[2]}-{(datetime.datetime.strptime(data[2], '%H:%M') + datetime.timedelta(minutes=data[3])).strftime('%H:%M')}\n"
+            f"Стоимость: {data[4]}")
         bot.send_message(message.chat.id, data_out, reply_markup=keyboard)
 
 
