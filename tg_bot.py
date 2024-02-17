@@ -32,15 +32,15 @@ def restricted(func):
 @restricted
 def menu_handler(message):
     keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    add_task_button = types.KeyboardButton(text="Добавить запись")
-    check_tasks_button = types.KeyboardButton(text="Просмотреть активные")
-    download_button = types.KeyboardButton(text="Скачать excel")
+    add_task_button = types.KeyboardButton(text="Добавить запись💸")
+    check_tasks_button = types.KeyboardButton(text="Просмотреть активные👀")
+    download_button = types.KeyboardButton(text="Скачать excel📝")
     keyboard.add(add_task_button, check_tasks_button, download_button)
     bot.send_message(message.chat.id, 'Добро пожаловать в главное меню. Выберите желаемое действие',
                      reply_markup=keyboard)
 
 
-@bot.message_handler(func=lambda message: message.text.lower() == 'добавить запись')
+@bot.message_handler(func=lambda message: message.text.lower() in ('добавить запись', 'добавить запись💸'))
 @restricted
 def add_task_handler(message):
     task = []
@@ -153,14 +153,15 @@ def get_price(message, task: list):
 def add_task(message, task: list):
     task.append(False)
     ans = write_task(task)
-    out = f'Ура! Запись на {task[0]} в {task[2]} для {task[1]} со стоимостью {task[3]} руб. успешно создана' if ans \
+    out = f'Ура! Запись на {task[0]} в {task[2]} для {task[1]} со стоимостью {task[4]} руб. успешно создана' if ans \
         else 'Ой, кажется произошла ошибка при создании записи. Возможно, данный такой заказ уже существует'
     keyboard = types.ReplyKeyboardRemove()
     bot.send_message(message.chat.id, out, reply_markup=keyboard)
     menu_handler(message)
+    sort_and_save_active_tasks()
 
 
-@bot.message_handler(func=lambda message: message.text.lower() == 'просмотреть активные')
+@bot.message_handler(func=lambda message: message.text.lower() in ('просмотреть активные', 'просмотреть активные👀'))
 @restricted
 def check_active(message):
     if len(active_tasks) == 0:
@@ -168,10 +169,11 @@ def check_active(message):
                          'Ой, кажется, у вас нет активных заказов. Хорошая или плохая эта новость, решать вам)')
         menu_handler(message)
         return
+
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     menu_button = types.KeyboardButton(text='Главное меню')
     keyboard.add(menu_button)
-    bot.send_message(message.chat.id, 'Вот список активных заказов:', reply_markup=keyboard)
+    bot.send_message(message.chat.id, 'Вот список активных заказов:🙊', reply_markup=keyboard)
 
     for index_task, data in active_tasks.items():
         keyboard = types.InlineKeyboardMarkup()
@@ -187,18 +189,22 @@ def check_active(message):
         bot.send_message(message.chat.id, data_out, reply_markup=keyboard)
 
 
+    bot.send_message(message.chat.id, 'Пожалуйста, дождитесь завершения или удаления предыдушей записи перед взаимодействием со следующей🙏')
+
+
 @bot.callback_query_handler(func=lambda call: True)
 def active_btn(call):
     message = call.message
     action, index = call.data.split('_')
-    task = active_tasks.pop(index)
-    change_status(action, task)
+    if active_tasks.get(index):
+        task = active_tasks.pop(index)
+        save_active_tasks()
+        change_status(action, task)
     res = 'удален' if action == 'del' else 'завершен'
-
     bot.edit_message_text(chat_id=message.chat.id, message_id=message.id, text=f'Заказ успешно {res}')
 
 
-@bot.message_handler(func=lambda message: message.text.lower() == 'скачать excel')
+@bot.message_handler(func=lambda message: message.text.lower() in ('скачать excel', 'скачать excel📝'))
 @restricted
 def send_excel(message):
     if 'excel' not in os.listdir(ROOT):
@@ -337,11 +343,10 @@ def check_excel_dir():
     if 'excel' not in os.listdir():
         os.mkdir('excel')
     else:
-        try:
-            shutil.copytree('excel', 'achieve')
-        except:
+        if 'achieve' in os.listdir():
             shutil.rmtree('achieve')
-            shutil.copytree('excel', 'achieve')
+
+        shutil.copytree('excel', 'achieve')
 
 
 def make_zip():
@@ -353,9 +358,6 @@ def make_zip():
 
 def send_doc(chat_id, filename, attempts=3):
     try:
-        # files = {'document': open(filename, 'rb')}
-        # response = requests.post(f'https://api.telegram.org/bot{TOKEN}/sendDocument?chat_id={chat_id}', files=files)
-        # response.raise_for_status()
         bot.send_message(chat_id, 'Пытаюсь получить файлы...')
         if attempts:
             bot.send_document(chat_id, InputFile(filename))

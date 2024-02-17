@@ -87,6 +87,7 @@ def get_filename(date, is_create=True):
         with pd.ExcelWriter(excel_week, mode='a', engine='openpyxl',
                             if_sheet_exists='replace') as writer:
             df.to_excel(writer, sheet_name=sheet, index=False)
+    wb.close()
 
     return os.path.join(os.getcwd(), excel_week)
 
@@ -124,7 +125,7 @@ def write_task(task: list):
     ws['I1'].font = Font(bold=True)
     ws['I2'] = summ
     wb.save(file_name)
-
+    wb.close()
     global last_index
     while True:
         if active_tasks.get(str(last_index)):
@@ -132,13 +133,17 @@ def write_task(task: list):
         else:
             active_tasks[str(last_index)] = task
             break
-    new_dict = dict(sorted(active_tasks.items(), key=lambda x: (x[1][0], x[1][2])))
-    active_tasks.clear()
-    active_tasks.update(new_dict)
+
     last_index += 1
     print('Обновление индекса:', last_index)
     return True
 
+
+def sort_and_save_active_tasks():
+    new_dict = dict(sorted(active_tasks.items(), key=lambda x: (x[1][0], x[1][2])))
+    active_tasks.clear()
+    active_tasks.update(new_dict)
+    save_active_tasks()
 
 def change_status(status, task: list):
     """
@@ -155,7 +160,7 @@ def change_status(status, task: list):
         mask = (df == task).all(axis=1)
         if mask.any():
             location = df.index[mask].tolist()
-            print(df.loc[location], location)
+            print(df.loc[location], location, status)
             if status == 'del':
                 df.drop(location, inplace=True)
             else:
@@ -173,3 +178,4 @@ def change_status(status, task: list):
         ws['I1'].font = Font(bold=True)
         ws['I2'] = summ
         wb.save(file_name)
+        wb.close()
