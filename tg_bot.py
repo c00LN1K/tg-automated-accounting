@@ -12,11 +12,14 @@ from telebot.types import InputFile
 import config
 from db import Task
 from work_with_excel import *
+import logging
 
 TOKEN = config.TOKEN
 
 bot = telebot.TeleBot(TOKEN)
 number_starts = 0
+logger = telebot.logger
+telebot.logger.setLevel(logging.ERROR)
 
 
 def restricted(func):
@@ -185,8 +188,9 @@ def check_active(message):
         keyboard.add(finish_button, delete_button)
         timee = (datetime.datetime.combine(datetime.datetime.today(), data.time) + datetime.timedelta(
             minutes=data.duration)).time()
+        date = datetime.datetime(year=data.year, month=data.month, day=data.day)
         data_out = (
-            f"Дата: {data.day}.{data.month}.{data.year} ({WEEKDAY[data.month]})\n"
+            f"Дата: {date.strftime('%d.%m.%Y')} ({WEEKDAY[date.weekday()]})\n"
             f"Имя: {data.name}\n"
             f"Длительность: {data.duration} мин.\n"
             f"Время: {data.time.strftime('%H:%M')}-{timee.strftime('%H:%M')}\n"
@@ -233,12 +237,14 @@ def get_period(message):
                          'Вы можете указать только день, тогда будет взять текущий месяц и год. Или указать только день и месяц, тогда - только текущий год')
         bot.register_next_step_handler(message, get_day)
     elif message.text == 'Месяц':
-        bot.send_message(message.chat.id, 'Напишите название или номер месяца, который вас интересует :)', reply_markup=keyboard)
+        bot.send_message(message.chat.id, 'Напишите название или номер месяца, который вас интересует :)',
+                         reply_markup=keyboard)
         bot.register_next_step_handler(message, get_month)
     elif message.text == 'Год':
         bot.send_message(message.chat.id, 'Укажите интересующий вас год -_-', reply_markup=keyboard)
         bot.register_next_step_handler(message, get_year)
     elif message.text == 'Все':
+        bot.send_message(message.chat.id, 'Пытаюсь получить файлы...')
         filename = create_all_excel_file()
         check_and_send_file(message, filename)
     elif message.text.lower() == 'главное меню':
@@ -261,7 +267,7 @@ def get_day(message):
         else:
             date = datetime.datetime.strptime(message.text, '%d').date()
             date = date.replace(year=datetime.datetime.now().year, month=datetime.datetime.now().month)
-
+        bot.send_message(message.chat.id, 'Пытаюсь получить файлы...')
         filename = create_one_day_excel_file(date)
         check_and_send_file(message, filename)
 
@@ -280,6 +286,7 @@ def get_month(message):
             month = int(message.text)
         else:
             month = MONTH.index(message.text.lower())
+        bot.send_message(message.chat.id, 'Пытаюсь получить файлы...')
         filename = create_month_excel_file(datetime.date.today().replace(month=month))
         check_and_send_file(message, filename)
 
@@ -294,6 +301,7 @@ def get_year(message):
         return
     elif message.text.isdigit():
         year = int(message.text.lower())
+        bot.send_message(message.chat.id, 'Пытаюсь получить файлы...')
         filename = create_year_excel_file(datetime.date.today().replace(year=year))
         check_and_send_file(message, filename)
     else:
@@ -321,7 +329,6 @@ def check_and_send_file(message, filename):
 
 def send_doc(chat_id, filename, attempts=3):
     try:
-        bot.send_message(chat_id, 'Пытаюсь получить файлы...')
         if attempts:
             bot.send_document(chat_id, InputFile(filename))
         else:
@@ -342,6 +349,12 @@ def write_about_error(error):
             f'{datetime.datetime.now().isoformat()} --> {error}\n\n')
 
 
+class ExceptionHandler(telebot.ExceptionHandler):
+    def handle(self, exception):
+        print(exception)
+        return True
+
+
 # Запускаем бота
 while True:
     try:
@@ -350,6 +363,7 @@ while True:
         # check_excel_dir()
         print('Бот запущен!')
         bot.polling(none_stop=True, interval=0)
+
     except (requests.exceptions.ConnectionError, RemoteDisconnected) as ex:
         traceback.print_tb(ex.__traceback__)
         # write_about_error(traceback.format_exc())

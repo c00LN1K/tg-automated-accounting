@@ -36,7 +36,7 @@ def get_filename(date):
 def create_excel_file(data, filename):
     df = pd.DataFrame(default_data)
     for el in data:
-        df.loc[len(df.index)] = [f'{el.day}.{el.month}.{el.year}', el.name, el.time.strftime('%H:%M'), el.duration,
+        df.loc[len(df.index)] = [f'{el.day:02}.{el.month:02}.{el.year}', el.name, el.time.strftime('%H:%M'), el.duration,
                                  el.price, el.is_finished]
     df.to_excel(filename, index=False)
 

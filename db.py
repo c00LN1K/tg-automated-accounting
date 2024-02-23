@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, DATETIME, VARCHAR, TIME, Boolean, and_, DATE
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-engine = create_engine('sqlite:///mydb.db')
+engine = create_engine('sqlite:///mydb.db', connect_args={"check_same_thread": False})
 session = sessionmaker(bind=engine)()
 
 Base = declarative_base()
@@ -58,7 +58,8 @@ class Task(BaseModel):
 
     @staticmethod
     def get_unfinished_tasks():
-        return session.query(Task).filter(Task.is_finished == False).order_by(Task.month, Task.day, Task.time).all()
+        return session.query(Task).filter(Task.is_finished == False).order_by(Task.year, Task.month, Task.day,
+                                                                              Task.time).all()
 
     @staticmethod
     def delete_task(pk):
