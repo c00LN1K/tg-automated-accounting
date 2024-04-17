@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import traceback
+import datetime
 from http.client import RemoteDisconnected
 from time import sleep
 import requests
@@ -9,7 +10,11 @@ import telebot
 from telebot import types
 from telebot.types import InputFile
 import config
+from db import Task
 from work_with_excel import *
+
+
+
 
 TOKEN = config.TOKEN
 
@@ -64,7 +69,6 @@ def get_date(message, task: list):
     elif message.text == 'Завтра':
         date = datetime.date.today() + datetime.timedelta(days=1)
     elif message.text == 'Другое':
-        # TODO: доработать логику (указан год или нет и тд)
         bot.send_message(message.chat.id, 'Укажите, пожалуйста, дату в формате: DD.MM.YYYY. Например, 30.01.2024',
                          reply_markup=keyboard)
         bot.send_message(message.chat.id,
@@ -77,12 +81,12 @@ def get_date(message, task: list):
             return
         try:
             if message.text.count('.') == 2:
-                date = datetime.datetime.strptime(message.text, '%d.%m.%Y')
+                date = datetime.datetime.strptime(message.text, '%d.%m.%Y').date()
             elif message.text.count('.') == 1:
-                d = datetime.datetime.strptime(message.text, '%d.%m')
+                d = datetime.datetime.strptime(message.text, '%d.%m').date()
                 date = d.replace(year=datetime.datetime.now().year)
             else:
-                d = datetime.datetime.strptime(message.text, '%d')
+                d = datetime.datetime.strptime(message.text, '%d').date()
                 date = d.replace(year=datetime.datetime.now().year, month=datetime.datetime.now().month)
 
         except ValueError as _ex:
@@ -90,7 +94,7 @@ def get_date(message, task: list):
             bot.register_next_step_handler(message, get_date, task)
 
     if date:
-        task.append(date.strftime('%Y-%m-%d'))
+        task.append(date)
         bot.send_message(message.chat.id, 'Введите имя заказчика', reply_markup=keyboard)
         bot.register_next_step_handler(message, get_name, task)
 
@@ -108,7 +112,8 @@ def get_time(message, task: list):
     if message.text == 'Главное меню':
         menu_handler(message)
     elif re.fullmatch(r'[0-2][0-9]:[0-9][0-9]', message.text):
-        task.append(message.text)
+        hour, minute = map(int, message.text.split(":"))
+        task.append(datetime.time(hour=hour, minute=minute))
         keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
         button30 = types.KeyboardButton(text='30')
         button60 = types.KeyboardButton(text='60')
@@ -151,19 +156,19 @@ def get_price(message, task: list):
 
 
 def add_task(message, task: list):
-    task.append(False)
-    ans = write_task(task)
-    out = f'Ура! Запись на {task[0]} в {task[2]} для {task[1]} со стоимостью {task[4]} руб. успешно создана' if ans \
-        else 'Ой, кажется произошла ошибка при создании записи. Возможно, данный такой заказ уже существует'
+    print(task)
+    res = Task.add_task(task)
+    out = f'Ура! Запись на {task[0]} в {task[2].strftime("%H:%M")} для {task[1]} со стоимостью {task[4]} руб. успешно создана' if res \
+        else 'Ой, кажется произошла ошибка при создании записи. Возможно, заказ на данное время и дату уже существует'
     keyboard = types.ReplyKeyboardRemove()
     bot.send_message(message.chat.id, out, reply_markup=keyboard)
     menu_handler(message)
-    sort_and_save_active_tasks()
 
 
 @bot.message_handler(func=lambda message: message.text.lower() in ('просмотреть активные', 'просмотреть активные👀'))
 @restricted
 def check_active(message):
+    active_tasks = Task.get_unfinished_tasks()
     if len(active_tasks) == 0:
         bot.send_message(message.chat.id,
                          'Ой, кажется, у вас нет активных заказов. Хорошая или плохая эта новость, решать вам)')
@@ -175,44 +180,40 @@ def check_active(message):
     keyboard.add(menu_button)
     bot.send_message(message.chat.id, 'Вот список активных заказов:🙊', reply_markup=keyboard)
 
-    for index_task, data in active_tasks.items():
+    for data in active_tasks:
+        index_task = data.id
         keyboard = types.InlineKeyboardMarkup()
         delete_button = types.InlineKeyboardButton(text='Удалить', callback_data=f'del_{index_task}')
         finish_button = types.InlineKeyboardButton(text='Завершить', callback_data=f'fin_{index_task}')
         keyboard.add(finish_button, delete_button)
+        timee = (datetime.datetime.combine(datetime.datetime.today(), data.time) + datetime.timedelta(
+            minutes=data.duration)).time()
+        date = datetime.datetime(year=data.year, month=data.month, day=data.day)
         data_out = (
-            f"Дата: {datetime.datetime.fromisoformat(data[0]).strftime('%d.%m')} ({WEEKDAY[datetime.datetime.fromisoformat(data[0]).weekday()]})\n"
-            f"Имя: {data[1]}\n"
-            f"Длительность: {data[3]} мин.\n"
-            f"Время: {data[2]}-{(datetime.datetime.strptime(data[2], '%H:%M') + datetime.timedelta(minutes=data[3])).strftime('%H:%M')}\n"
-            f"Стоимость: {data[4]}")
+            f"Дата: {date.strftime('%d.%m.%Y')} ({WEEKDAY[date.weekday()]})\n"
+            f"Имя: {data.name}\n"
+            f"Длительность: {data.duration} мин.\n"
+            f"Время: {data.time.strftime('%H:%M')}-{timee.strftime('%H:%M')}\n"
+            f"Стоимость: {data.price}")
         bot.send_message(message.chat.id, data_out, reply_markup=keyboard)
-
-
-    bot.send_message(message.chat.id, 'Пожалуйста, дождитесь завершения или удаления предыдушей записи перед взаимодействием со следующей🙏')
 
 
 @bot.callback_query_handler(func=lambda call: True)
 def active_btn(call):
     message = call.message
     action, index = call.data.split('_')
-    if active_tasks.get(index):
-        task = active_tasks.pop(index)
-        save_active_tasks()
-        change_status(action, task)
-    res = 'удален' if action == 'del' else 'завершен'
-    bot.edit_message_text(chat_id=message.chat.id, message_id=message.id, text=f'Заказ успешно {res}')
+
+    if action == 'del':
+        Task.delete_task(int(index))
+        bot.edit_message_text(chat_id=message.chat.id, message_id=message.id, text=f'Заказ успешно удален')
+    else:
+        Task.finish_task(int(index))
+        bot.edit_message_text(chat_id=message.chat.id, message_id=message.id, text=f'Заказ успешно завершен')
 
 
 @bot.message_handler(func=lambda message: message.text.lower() in ('скачать excel', 'скачать excel📝'))
 @restricted
 def send_excel(message):
-    if 'excel' not in os.listdir(ROOT):
-        bot.send_message(message.chat.id,
-                         'Ой, похоже мне нечего вам прислать. Возможно, вы ещё не создали ни одной записи. Так чего же вы ждёте)')
-        menu_handler(message)
-        return
-
     keyboard = types.ReplyKeyboardMarkup(row_width=3, resize_keyboard=True)
     day_button = types.KeyboardButton(text='День')
     week_button = types.KeyboardButton(text='Месяц')
@@ -236,15 +237,16 @@ def get_period(message):
                          'Вы можете указать только день, тогда будет взять текущий месяц и год. Или указать только день и месяц, тогда - только текущий год')
         bot.register_next_step_handler(message, get_day)
     elif message.text == 'Месяц':
-        bot.send_message(message.chat.id, 'Напишите название месяца, который вас интересует :)', reply_markup=keyboard)
+        bot.send_message(message.chat.id, 'Напишите название или номер месяца, который вас интересует :)',
+                         reply_markup=keyboard)
         bot.register_next_step_handler(message, get_month)
     elif message.text == 'Год':
         bot.send_message(message.chat.id, 'Укажите интересующий вас год -_-', reply_markup=keyboard)
         bot.register_next_step_handler(message, get_year)
     elif message.text == 'Все':
-        make_zip()
-        send_doc(message.chat.id, 'excel.zip')
-        menu_handler(message)
+        bot.send_message(message.chat.id, 'Пытаюсь получить файлы...')
+        filename = create_all_excel_file()
+        check_and_send_file(message, filename)
     elif message.text.lower() == 'главное меню':
         menu_handler(message)
     else:
@@ -258,22 +260,19 @@ def get_day(message):
         return
     try:
         if message.text.count('.') == 2:
-            date = datetime.datetime.strptime(message.text, '%d.%m.%Y')
+            date = datetime.datetime.strptime(message.text, '%d.%m.%Y').date()
         elif message.text.count('.') == 1:
-            date = datetime.datetime.strptime(message.text, '%d.%m')
+            date = datetime.datetime.strptime(message.text, '%d.%m').date()
             date = date.replace(year=datetime.datetime.now().year)
         else:
-            date = datetime.datetime.strptime(message.text, '%d')
+            date = datetime.datetime.strptime(message.text, '%d').date()
             date = date.replace(year=datetime.datetime.now().year, month=datetime.datetime.now().month)
+        bot.send_message(message.chat.id, 'Пытаюсь получить файлы...')
+        filename = create_one_day_excel_file(date)
+        check_and_send_file(message, filename)
 
-        filename = get_filename(date, False)
-        if filename:
-            send_doc(message.chat.id, filename)
-        else:
-            bot.send_message(message.chat.id, 'Похоже, что такого файла за такой период нет.')
-        menu_handler(message)
-
-    except ValueError:
+    except ValueError as _ex:
+        traceback.print_tb(_ex.__traceback__)
         bot.send_message(message.chat.id, 'Похоже возникла ошибка. Проверьте корректность вводимых данных')
         bot.register_next_step_handler(message, get_day)
 
@@ -282,26 +281,15 @@ def get_month(message):
     if message.text.lower() == 'главное меню':
         menu_handler(message)
         return
-    elif message.text.lower() in MONTH:
-        check_root()
-        is_have = False
-        month = message.text.lower()
-        os.chdir('excel')
-        year = f'{datetime.datetime.now().year}'
-        if year in os.listdir():
-            os.chdir(year)
-            if month in os.listdir():
-                if f'{month}.zip' in os.listdir():
-                    os.remove(f'{month}.zip')
-                shutil.make_archive(month, 'zip', month)
-                send_doc(message.chat.id, f'{month}.zip')
-                os.remove(os.path.join(ROOT, 'excel', year, f'{month}.zip'))
-                # os.remove(f'{ROOT}\\excel\\{year}\\{month}.zip')
-                is_have = True
-        if not is_have:
-            bot.send_message(message.chat.id,
-                             'Похоже, что файл за указанный период отсутствует. Попробуйте ещё раз или выберите конкретную дату')
-        menu_handler(message)
+    elif message.text.lower() in MONTH or (message.text.isdigit() and 1 <= int(message.text.isdigit()) <= 12):
+        if message.text.isdigit():
+            month = int(message.text)
+        else:
+            month = MONTH.index(message.text.lower())
+        bot.send_message(message.chat.id, 'Пытаюсь получить файлы...')
+        filename = create_month_excel_file(datetime.date.today().replace(month=month))
+        check_and_send_file(message, filename)
+
     else:
         bot.send_message(message.chat.id, 'Похоже возникла ошибка. Проверьте корректность вводимых данных')
         bot.register_next_step_handler(message, get_month)
@@ -312,19 +300,10 @@ def get_year(message):
         menu_handler(message)
         return
     elif message.text.isdigit():
-        year = message.text
-        check_root()
-        os.chdir('excel')
-        if year in os.listdir():
-            if f'{year}.zip' in os.listdir():
-                os.remove(f'{year}.zip')
-            shutil.make_archive(year, 'zip', year)
-            send_doc(message.chat.id, f'{year}.zip')
-            os.path.join(ROOT, 'excel', f'{year}.zip')
-            # os.remove(f'{ROOT}\\excel\\{year}.zip')
-        else:
-            bot.send_message(message.chat.id, 'Похоже, что файл за указанный период отсутствует')
-        menu_handler(message)
+        year = int(message.text.lower())
+        bot.send_message(message.chat.id, 'Пытаюсь получить файлы...')
+        filename = create_year_excel_file(datetime.date.today().replace(year=year))
+        check_and_send_file(message, filename)
     else:
         bot.send_message(message.chat.id, 'Похоже возникла ошибка. Проверьте корректность вводимых данных')
         bot.register_next_step_handler(message, get_year)
@@ -339,26 +318,17 @@ def bot_message(message):
         bot.send_message(message.chat.id, "Ой, я вас немного недопонял👉👈. Убедитесь, пожалуйста, в корректности ввода")
 
 
-def check_excel_dir():
-    if 'excel' not in os.listdir():
-        os.mkdir('excel')
+def check_and_send_file(message, filename):
+    if filename is None:
+        bot.send_message(message.chat.id, 'Упс. Кажется, нет данных за этот период')
     else:
-        if 'achieve' in os.listdir():
-            shutil.rmtree('achieve')
-
-        shutil.copytree('excel', 'achieve')
-
-
-def make_zip():
-    check_root()
-    if 'excel.zip' in os.listdir():
-        os.remove('excel.zip')
-    shutil.make_archive('excel', 'zip', 'excel')
+        send_doc(message.chat.id, filename=filename)
+        os.remove(filename)
+    menu_handler(message)
 
 
 def send_doc(chat_id, filename, attempts=3):
     try:
-        bot.send_message(chat_id, 'Пытаюсь получить файлы...')
         if attempts:
             bot.send_document(chat_id, InputFile(filename))
         else:
@@ -373,7 +343,6 @@ def send_doc(chat_id, filename, attempts=3):
 
 
 def write_about_error(error):
-    check_root()
     with open('error.txt', 'a') as file:
         file.write(
             f'{datetime.datetime.now().isoformat()} --> {error}\n\n')
@@ -383,22 +352,14 @@ def write_about_error(error):
 while True:
     try:
         write_about_error('Bot is running!')
-        get_active_tasks()
-        check_excel_dir()
         print('Бот запущен!')
-        bot.polling(none_stop=True, interval=0)
+        bot.polling()
+
     except (requests.exceptions.ConnectionError, RemoteDisconnected) as ex:
         traceback.print_tb(ex.__traceback__)
-        write_about_error(traceback.format_exc())
         bot.send_message(config.FEEDBACK_ID, f'Ошибка с соединением')
         sleep(30)
 
     except Exception as _ex:
         traceback.print_tb(_ex.__traceback__)
-        write_about_error(traceback.format_exc())
-        save_active_tasks()
-        make_zip()
-        bot.send_document(config.FEEDBACK_ID, open('error.txt', 'rb'))
-        bot.send_document(config.FEEDBACK_ID, open('excel.zip', 'rb'))
-        # TODO: разобраться с отправкой и с сохранением активных задач при ошибках
         sleep(5)
